@@ -157,5 +157,39 @@ systemctl enable nginx
 2. Visit the DNS address of `travel-memory-fe-alb` in your browser.
 3. Open browser developer tools (F12) and confirm outbound API calls are hitting `http://<BACKEND_ALB_DNS_NAME>/...` with HTTP `200` responses.
 
----
+## Step 5: Add a Custom Domain via Cloudflare and Attach to Frontend ALB
 
+### 5.1. Create/Select a Domain in Cloudflare
+1. Log into your Cloudflare account and add the domain you want to use (e.g., `example.com`).
+2. Cloudflare will scan existing DNS records; **remove any A/CNAME records that point to the default Cloudflare proxy** – you will add a new record that points to the Frontend ALB.
+3. Change the domain’s **Nameserver** settings at your registrar to the two Cloudflare nameservers provided. Propagation may take up to 24 hours, but most changes are visible within minutes.
+
+### 5.2. Create an ALB Alias Record in Cloudflare
+1. In the Cloudflare dashboard for your domain, go to **DNS**.
+2. Add a **CNAME** record:
+   - **Name**: `www` (or `@` for the root domain).
+   - **Target**: The **DNS name** of the Frontend ALB (e.g., `travel-memory-fe-alb-1234.us-east-1.elb.amazonaws.com`).
+   - **TTL**: Auto.
+   - **Proxy status**: **DNS only** (the orange cloud **off**) – the ALB already provides HTTPS termination; Cloudflare proxy would interfere with the certificate handling.
+3. Save the record.
+
+### 5.3. Configure SSL/TLS in Cloudflare (Optional but Recommended)
+- Set **SSL/TLS** mode to **Full (strict)** so Cloudflare validates the certificate presented by the ALB.
+- If you do not have a certificate on the ALB yet, you can request a free ACM certificate (see Step 5.4).
+
+### 5.4. Attach an ACM Certificate to the Frontend ALB
+1. Open the **AWS Certificate Manager (ACM)** console in the same region as the ALB.
+2. Request a public certificate for the domain (e.g., `example.com` and `*.example.com`).
+3. Validate via DNS – ACM will give you CNAME records; add these to Cloudflare DNS.
+4. Once the certificate is **Issued**, go back to the **Frontend ALB**:
+   - Select **Listeners → Add listener** (or edit the existing HTTPS listener on port 443).
+   - Choose **HTTPS**, set **SSL certificate** to the ACM certificate you just created.
+   - Add a rule to forward traffic to the existing `tg-frontend` target group.
+5. (Optional) Delete the HTTP listener on port 80 if you want all traffic forced to HTTPS.
+
+### 5.5. Verify the Custom Domain
+1. After DNS propagation, open a browser and navigate to `https://www.example.com` (or the root domain you configured).
+2. The request should resolve to the Frontend ALB, serve the React app, and the app should successfully call the backend via the URL you set in `REACT_APP_BACKEND_URL`.
+3. Use `curl -I https://www.example.com` or an online SSL checker to confirm the certificate is correctly presented.
+
+---
